@@ -19,9 +19,13 @@ class TicTacToeSolver:
 
     def _format_board_for_prompt(self, game: TicTacToeGame) -> str:
         """Format the board as a string for the prompt"""
-        board_str = ""
-        for row in game.board:
-            board_str += "|" + "|".join(cell if cell != "" else " " for cell in row) + "|\n"
+        # Add column numbers at the top
+        board_str = "   " + "  ".join(f"c{i}" for i in range(game.n)) + "\n"
+
+        # Add each row with row number
+        for i, row in enumerate(game.board):
+            board_str += f"r{i} |" + "|".join(cell if cell != "" else " " for cell in row) + "|\n"
+
         return board_str
 
     def _get_previous_move(self, game: TicTacToeGame) -> str:
@@ -51,7 +55,9 @@ class TicTacToeSolver:
     def _get_move_from_llm(self, llm: LLMProvider, game: TicTacToeGame, current_player: int) -> Tuple[int, int]:
         """Get the next move from the LLM"""
         prompt = self._prepare_prompt(game, current_player)
-        response = llm.generate(prompt, temperature=0.1)  # Low temperature for more consistent moves
+        print(f"Prompt for Player {current_player}:")
+        print(prompt)
+        response = llm.generate(prompt, temperature=0.05)  # Low temperature for more consistent moves
 
         try:
             move_data = json.loads(response.text)
