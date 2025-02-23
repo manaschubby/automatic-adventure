@@ -36,21 +36,30 @@ class TicTacToeSolver:
         return f"row {last_move['position'][0]}, column {last_move['position'][1]}"
 
 
+    def _format_moves_history(self, game: TicTacToeGame) -> str:
+        """Format the moves history in a clear, sequential format"""
+        if not game.moves_history:
+            return "No moves played yet"
+
+        moves_str = "Moves played so far:\n"
+        for i, move in enumerate(game.moves_history, 1):
+            player_symbol = 'X' if move['player'] == 1 else 'O'
+            moves_str += f"Move {i}: Player {move['player']} ({player_symbol}) played at row {move['position'][0]}, column {move['position'][1]}\n"
+        return moves_str
+
     def _prepare_prompt(self, game: TicTacToeGame, current_player: int) -> str:
-            """Prepare the prompt for the LLM"""
-            symbol = 'X' if current_player == 1 else 'O'
-            opponent_symbol = 'O' if current_player == 1 else 'X'
+        """Prepare the prompt for the LLM"""
+        symbol = 'X' if current_player == 1 else 'O'
+        opponent_symbol = 'O' if current_player == 1 else 'X'
 
-            print(f"Board State for Player {current_player} ({symbol}):")
-            print(self._format_board_for_prompt(game))
-
-            return self.prompt_template.format(
-                symbol=symbol,
-                opponent_symbol=opponent_symbol,
-                rows=game.n,
-                layout=self._format_board_for_prompt(game),
-                previous_move=self._get_previous_move(game)
-            )
+        return self.prompt_template.format(
+            symbol=symbol,
+            opponent_symbol=opponent_symbol,
+            rows=game.n,
+            moves_history=self._format_moves_history(game),
+            layout=self._format_board_for_prompt(game),
+            previous_move=self._get_previous_move(game)
+        )
 
     def _get_move_from_llm(self, llm: LLMProvider, game: TicTacToeGame, current_player: int) -> Tuple[int, int]:
         """Get the next move from the LLM"""
@@ -100,6 +109,10 @@ class TicTacToeSolver:
                 print(f"Error during move: {e}")
                 # If there's an error, the current player forfeits
                 return 3 - current_player
+
+        game = TicTacToeGame.load_from_file(game_id)
+        print("Game finished! Board State:")
+        print(self._format_board_for_prompt(game=game))
 
         return winner if winner is not None else 0
 
