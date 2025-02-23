@@ -109,6 +109,10 @@ class TicTacToeSolver:
                 print(f"Error during move: {e}")
                 # If there's an error, the current player forfeits
                 return 3 - current_player
+            except Exception as e:
+                print(f"Unexpected error during move: {e}")
+                # If there's an unexpected error, the current player forfeits
+                return 3 - current_player
 
         game = TicTacToeGame.load_from_file(game_id)
         print("Game finished! Board State:")

@@ -1,28 +1,49 @@
-
 import json
 from typing import List
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.stats import binom
 from tqdm import tqdm
-from time import sleep
 import os
+import argparse
 from .tic_tac_toe_solver import play_game
 
-def run_trials(n_trials: int = 5) -> List[int]:
+def load_previous_outcomes(filename: str) -> List[int]:
+    """
+    Load previously saved outcomes from a JSON file
+    """
+    try:
+        with open(f"{filename}.json", 'r') as f:
+            data = json.load(f)
+            return data["outcomes"]
+    except FileNotFoundError:
+        return []
+
+def run_trials(n_trials: int = 5, continue_previous: bool = False) -> List[int]:
     """
     Run n_trials of Tic Tac Toe games and return the outcomes
     """
     outcomes = []
-    api_key = os.getenv("GEMINI_API_KEY")
+    if continue_previous:
+        outcomes = load_previous_outcomes("output/Exercise1")
+        print(f"Loaded {len(outcomes)} previous outcomes")
+        remaining_trials = n_trials - len(outcomes)
+    else:
+        remaining_trials = n_trials
 
+    if remaining_trials <= 0:
+        print("Already have enough trials, no need to run more")
+        return outcomes
+
+    api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise ValueError("GEMINI_API_KEY environment variable not set")
 
     # Use tqdm for progress bar
-    for i in tqdm(range(n_trials), desc="Running games"):
+    start_index = len(outcomes)
+    for i in tqdm(range(remaining_trials), desc="Running games"):
         winner = play_game(api_key, api_key)
-        print("Game", i+1, "winner:", winner, "Waiting 10s before next game")
-        sleep(10)
+        print(f"Game {start_index + i + 1} winner: {winner}")
         outcomes.append(winner)
 
     return outcomes
@@ -64,7 +85,7 @@ def plot_binomial_distribution(outcomes: List[int], filename: str):
 
     # Create binomial distribution
     k = np.arange(0, n_valid_games + 1)
-    binomial = plt.binompmf(k, n_valid_games, 0.5)  # Expected probability is 0.5
+    binomial = binom.pmf(k, n_valid_games, 0.5)  # Expected probability is 0.5
 
     # Create the plot
     plt.figure(figsize=(10, 6))
@@ -90,12 +111,19 @@ def plot_binomial_distribution(outcomes: List[int], filename: str):
     plt.close()
 
 def main():
+    parser = argparse.ArgumentParser(description='Run Tic Tac Toe trials')
+    parser.add_argument('--continue', dest='continue_previous', action='store_true',
+                      help='Continue from previous results')
+    parser.add_argument('--trials', type=int, default=500,
+                      help='Total number of trials to run (default: 500)')
+    args = parser.parse_args()
+
     # Create output directory if it doesn't exist
     os.makedirs("output", exist_ok=True)
 
     # Run the trials
-    print("Starting 5 trials of Tic Tac Toe...")
-    outcomes = run_trials(5)
+    print(f"Starting/Continuing trials until we have {args.trials} total...")
+    outcomes = run_trials(args.trials, args.continue_previous)
 
     # Save outcomes
     save_outcomes(outcomes, "output/Exercise1")
@@ -108,4 +136,5 @@ def main():
     print(f"Player 2 wins: {outcomes.count(2)}")
     print(f"Draws: {outcomes.count(0)}")
 
-main()
+if __name__ == "__main__":
+    main()

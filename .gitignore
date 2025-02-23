@@ -1,2 +1,3 @@
 game_*.json
 __pycache__
+output/
