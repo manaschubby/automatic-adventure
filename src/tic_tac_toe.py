@@ -22,13 +22,13 @@ class TicTacToeGame:
             'winner': self.winner
         }
 
-        with open(f'game_{self.game_id}.json', 'w') as f:
+        with open(f'output/game_{self.game_id}.json', 'w') as f:
             json.dump(game_data, f)
 
     @staticmethod
     def load_from_file(game_id: str) -> 'TicTacToeGame':
         """Loads a game from a JSON file"""
-        with open(f'game_{game_id}.json', 'r') as f:
+        with open(f'output/game_{game_id}.json', 'r') as f:
             game_data = json.load(f)
 
         game = TicTacToeGame(game_data['n'], game_data['game_id'])
