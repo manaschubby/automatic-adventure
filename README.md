@@ -23,6 +23,8 @@ LLM based Tic Tac Toe and Probabilistic Wumpus Solver
 ## Reference file structure
 ```
 ├── src/
+│   ├── prompts/
+│   │   ├── tic_tac_toe_prompt.txt
 │   ├── tic_tac_toe.py
 │   ├── llm_caller.py
 │   ├── wumpus_world_system.py

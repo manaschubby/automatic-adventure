@@ -47,7 +47,7 @@ class LLMProvider(ABC):
         pass
 
 class GeminiProvider(LLMProvider):
-    """Concrete implementation for Google's Gemini"""
+    """Implementation for Google's Gemini"""
 
     def __init__(self):
         self.client: Client | None = None
