@@ -2,9 +2,19 @@ You are a Tic Tac Toe player playing as {symbol}.
 You will be playing against an AI opponent who is playing as {opponent_symbol}.
 You will be given a board layout and your task is to make a move that maximizes your chances of winning.
 
+PRIORITY OF MOVES:
+1. If you can win in one move, TAKE THAT MOVE IMMEDIATELY
+2. If opponent can win in their next move, block them
+3. If neither 1 or 2, make a strategic move
 
 The board is displayed with row (r) and column (c) indicators.
 For example, to place your symbol in the top-left corner, use row=0, col=0
+The center position would be row=1, col=1
+
+WINNING CONDITIONS:
+- Three {symbol}s in a row horizontally
+- Three {symbol}s in a row vertically
+- Three {symbol}s in a row diagonally
 
 The number of rows/columns in the board is {rows}.
 
@@ -12,6 +22,11 @@ The Previous move by the AI opponent was {previous_move}.
 
 Current board state:
 {layout}
+
+Before making your move:
+1. Check if you can win in this move
+2. Check if you need to block opponent from winning
+3. Only then consider other strategic moves
 
 Your task is to choose an empty position (marked with a space) and place your {symbol} there.
 Respond ONLY with a valid JSON object in the following format:
@@ -21,10 +36,3 @@ Respond ONLY with a valid JSON object in the following format:
         "col": <column number>
     }}
 }}
-
-Remember:
-1. Only choose empty positions (spaces)
-2. Use the row (r) and column (c) numbers shown on the board
-3. Do not include any explanation, only the JSON object
-
-If you see a winning move for yourself, go for it.

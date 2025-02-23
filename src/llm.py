@@ -58,7 +58,7 @@ class GeminiProvider(LLMProvider):
 
     def generate(self,
                 prompt: str,
-                model: str | None = "gemini-pro",
+                model: str | None = "gemini-1.5-flash-002",
                 temperature: float | None = 0.7,
                 max_tokens: int | None = None,
                 **kwargs) -> LLMResponse:

@@ -55,12 +55,14 @@ class TicTacToeSolver:
     def _get_move_from_llm(self, llm: LLMProvider, game: TicTacToeGame, current_player: int) -> Tuple[int, int]:
         """Get the next move from the LLM"""
         prompt = self._prepare_prompt(game, current_player)
-        print(f"Prompt for Player {current_player}:")
-        print(prompt)
-        response = llm.generate(prompt, temperature=0.05)  # Low temperature for more consistent moves
-
+        # print(f"Prompt for Player {current_player}:")
+        # print(prompt)
+        response = llm.generate(prompt, temperature=0.5)  # Low temperature for more consistent moves
+        string = response.text
+        if string.startswith("```json"):
+            string = string.replace("```json", "").replace("```", "")
         try:
-            move_data = json.loads(response.text)
+            move_data = json.loads(string)
             return (move_data["move"]["row"], move_data["move"]["col"])
         except (json.JSONDecodeError, KeyError) as e:
             raise ValueError(f"Invalid response from LLM: {response.text}") from e
