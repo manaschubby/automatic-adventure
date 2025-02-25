@@ -8,7 +8,7 @@ LLM based Tic Tac Toe and Probabilistic Wumpus Solver
 - [x] Store each game move
 - [x] Create a prompt for letting LLM take next Step in game based on current state and previous move
 - [x] Use LLM response to do next move
-- [ ] Plotting response for 500 trials (Check how much this will cost)
+- [x] Plotting response for 500 trials
 
 ## Wumpus (Make a better roadmap for this)
 - [ ] Go through wumpus textbook problem and solutions described in Lecture slides
@@ -24,7 +24,7 @@ LLM based Tic Tac Toe and Probabilistic Wumpus Solver
 ```
 ├── src/
 │   ├── prompts/
-│   │   ├── tic_tac_toe_prompt.txt
+│   │   └── tic_tac_toe_prompt.txt
 │   ├── tic_tac_toe.py
 │   ├── tic_tac_toe_solver.py
 │   ├── llm.py
