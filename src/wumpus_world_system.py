@@ -18,14 +18,16 @@ class WumpusWorld:
         self.agent_pos = (0, 0)
         self.visited = set()
         self.visit_count = Counter()  # Track how many times each cell has been visited
-        self.move_history = []  # Track the last few moves
         self.bayesian_model = None
         self.inference = None
         self.step = 0
         self.knowledge = {}  # Agent's knowledge about the environment
         self.frontier = set()  # Unvisited cells adjacent to visited ones
-        self.last_positions = []  # Track the last 5 positions to detect loops
+        self.last_positions = []  # Track the last positions to detect loops
         self.gold_pos = None
+        self.known_pits = set()  # Track confirmed pit locations
+        self.known_wumpus = set()  # Track confirmed wumpus locations
+        self.deaths = Counter()  # Track locations where agent died
 
         # Randomly place elements and ensure gold is reachable
         self.place_elements_randomly()
@@ -80,7 +82,7 @@ class WumpusWorld:
                 break
             else:
                 # Reset and try again if gold is not reachable
-                print("Gold not reachable, repositioning...")
+                print("Gold not reachable, rebuilding the world...")
                 self.grid[gold_pos]['type'] = 'Empty'
 
         # Add breezes and stenches
@@ -259,18 +261,36 @@ class WumpusWorld:
 
         # Mark all unvisited neighbors as frontier cells (potential next moves)
         for nx, ny in self.get_neighbors(x, y):
-            if (nx, ny) not in self.visited:
+            if (nx, ny) not in self.visited and (nx, ny) not in self.known_pits and (nx, ny) not in self.known_wumpus:
                 self.frontier.add((nx, ny))
 
             if (nx, ny) not in self.knowledge:
                 self.knowledge[(nx, ny)] = {'breeze': False, 'stench': False, 'safe': None}
+
+        # Rule-based reasoning to mark cells as definitely safe or dangerous
+        self.update_safety_knowledge()
+
+    def update_safety_knowledge(self):
+        """Use logical rules to mark cells as safe or dangerous"""
+        # If we're in a cell with no breeze or stench, all adjacent cells are safe
+        x, y = self.agent_pos
+        percepts = self.grid[(x, y)]['percepts']
+
+        if not percepts:  # No percepts (no breeze, no stench)
+            for nx, ny in self.get_neighbors(x, y):
+                if (nx, ny) not in self.knowledge:
+                    self.knowledge[(nx, ny)] = {'breeze': False, 'stench': False, 'safe': True}
+                else:
+                    self.knowledge[(nx, ny)]['safe'] = True
 
     def update_frontier(self):
         """Update the frontier set (unvisited cells adjacent to visited cells)"""
         self.frontier = set()
         for x, y in self.visited:
             for nx, ny in self.get_neighbors(x, y):
-                if (nx, ny) not in self.visited:
+                if ((nx, ny) not in self.visited and
+                    (nx, ny) not in self.known_pits and
+                    (nx, ny) not in self.known_wumpus):
                     self.frontier.add((nx, ny))
 
     def compute_risk(self):
@@ -280,6 +300,18 @@ class WumpusWorld:
         # Mark visited cells as safe
         for x, y in self.visited:
             risk[x, y] = 0
+
+        # Mark known dangerous cells
+        for x, y in self.known_pits:
+            risk[x, y] = 1.0
+        for x, y in self.known_wumpus:
+            risk[x, y] = 1.0
+
+        # Mark cells where agent died before
+        for pos, count in self.deaths.items():
+            if count > 0:
+                x, y = pos
+                risk[x, y] = min(1.0, 0.7 + count * 0.1)  # Increase risk with death count
 
         if self.bayesian_model and self.inference:
             # Use Bayesian inference where possible
@@ -291,10 +323,18 @@ class WumpusWorld:
                     evidence[f"Breeze_{x}_{y}"] = 1 if info['breeze'] else 0
                     evidence[f"Stench_{x}_{y}"] = 1 if info['stench'] else 0
 
+            # Add evidence for known pits and wumpus
+            for x, y in self.known_pits:
+                evidence[f"Pit_{x}_{y}"] = 1
+            for x, y in self.known_wumpus:
+                evidence[f"Wumpus_{x}_{y}"] = 1
+
             # Query unvisited cells
             for x in range(self.size):
                 for y in range(self.size):
-                    if (x, y) not in self.visited:
+                    if ((x, y) not in self.visited and
+                        (x, y) not in self.known_pits and
+                        (x, y) not in self.known_wumpus):
                         try:
                             # Calculate pit risk
                             pit_query = self.inference.query([f"Pit_{x}_{y}"], evidence=evidence)
@@ -313,7 +353,9 @@ class WumpusWorld:
             # Use direct reasoning if no Bayesian model
             for x in range(self.size):
                 for y in range(self.size):
-                    if (x, y) not in self.visited:
+                    if ((x, y) not in self.visited and
+                        (x, y) not in self.known_pits and
+                        (x, y) not in self.known_wumpus):
                         risk[x, y] = self.heuristic_risk(x, y)
 
         return risk
@@ -322,6 +364,12 @@ class WumpusWorld:
         """Compute a heuristic risk score for a cell based on adjacent knowledge"""
         if (x, y) in self.visited:
             return 0.0  # Visited cells are safe
+
+        if (x, y) in self.known_pits or (x, y) in self.known_wumpus:
+            return 1.0  # Known dangerous cells
+
+        if (x, y) in self.deaths:
+            return 0.9  # We died here before
 
         neighbors = self.get_neighbors(x, y)
         visited_neighbors = [n for n in neighbors if n in self.visited]
@@ -334,8 +382,16 @@ class WumpusWorld:
 
         if breeze_neighbors or stench_neighbors:
             return 0.8  # Dangerous - adjacent to breeze or stench
-        else:
-            return 0.1  # Likely safe - no breeze or stench in adjacent cells
+
+        # Check for a cell adjacent to a 'safe' cell (no breeze, no stench)
+        safe_neighbors = [n for n in visited_neighbors
+                         if not self.knowledge.get(n, {}).get('breeze', False) and
+                            not self.knowledge.get(n, {}).get('stench', False)]
+
+        if safe_neighbors:
+            return 0.1  # Likely safe - adjacent to a cell with no breeze/stench
+
+        return 0.5  # Default risk
 
     def visualize_risk(self, risk):
         """Visualize the risk map"""
@@ -353,7 +409,7 @@ class WumpusWorld:
                     masked_risk[x, y] = -0.5  # Special value for visited cells
 
         # Custom colormap: agent=blue, visited=green, safe=white to dangerous=red
-        cmap = plt.cm.get_cmap('RdYlGn_r').copy()
+        cmap = plt.get_cmap('RdYlGn_r').copy()
         cmap.set_under('green')  # Visited cells
         cmap.set_over('blue')    # Agent position
 
@@ -377,25 +433,58 @@ class WumpusWorld:
                         count = self.visit_count[(x, y)]
                         text = f'{breeze}{stench}{"" if count <= 1 else count}'
                         plt.text(y, x, text, ha='center', va='center', color='black')
+                elif (x, y) in self.known_pits:
+                    plt.text(y, x, 'P!', ha='center', va='center', color='white')
+                elif (x, y) in self.known_wumpus:
+                    plt.text(y, x, 'W!', ha='center', va='center', color='white')
                 else:
                     plt.text(y, x, f'{risk[x, y]:.1f}', ha='center', va='center',
                              color='black' if risk[x, y] < 0.7 else 'white')
 
         plt.title(f'Wumpus World Risk Map - Step {self.step}')
-        plt.savefig(f'wumpus_output/risk_step_{self.step:02d}.png')
+        plt.savefig(f'wumpus_output/risk_step_{self.step:03d}.png')
         plt.close()
 
     def is_in_loop(self, next_pos):
         """Check if moving to next_pos would create a loop"""
-        if len(self.last_positions) < 4:
+        if len(self.last_positions) < 6:
             return False
 
-        # Check for oscillation between two positions (A-B-A-B)
+        # Check for simple oscillation between two positions (A-B-A-B)
         if (next_pos == self.last_positions[-2] and
             self.agent_pos == self.last_positions[-1] and
             next_pos == self.last_positions[-4] and
             self.agent_pos == self.last_positions[-3]):
             return True
+
+        # Check for repeated sequences in position history
+        history_str = str(self.last_positions[-6:] + [next_pos])
+        # If we've seen this cell often in recent history
+        if history_str.count(str(next_pos)) > 2:
+            return True
+
+        return False
+
+    def need_random_exploration(self):
+        """Determine if we need to break out of a loop with random exploration"""
+        # Check if we're visiting the same few cells repeatedly
+        if len(self.last_positions) < 10:
+            return False
+
+        # Count unique positions in recent history
+        recent = self.last_positions[-10:]
+        unique_positions = len(set(recent))
+
+        # If we're cycling through just a few positions
+        if unique_positions <= 3:
+            return True
+
+        # Check if we're revisiting the same cells too many times
+        current_pos = self.agent_pos
+        if self.visit_count[current_pos] > 20:
+            neighbors = self.get_neighbors(*current_pos)
+            if any(self.visit_count[n] > 20 for n in neighbors):
+                return True
 
         return False
 
@@ -407,35 +496,62 @@ class WumpusWorld:
         x, y = self.agent_pos
         neighbors = self.get_neighbors(x, y)
 
-        # Calculate a score for each possible move
+        # If we're stuck in a loop, try more aggressive exploration
+        if self.need_random_exploration():
+            print("⚠️ Detected loop pattern - forcing random exploration")
+            # Find all neighbors not known to be dangerous
+            safe_options = [(nx, ny) for nx, ny in neighbors
+                           if (nx, ny) not in self.known_pits and (nx, ny) not in self.known_wumpus]
+
+            if safe_options:
+                # Weight by visit count (prefer less visited)
+                weights = [1.0 / (1 + self.visit_count[pos]) for pos in safe_options]
+                total = sum(weights)
+                norm_weights = [w/total for w in weights]
+
+                # Use weighted random choice to prefer less visited cells
+                return random.choices(safe_options, weights=norm_weights, k=1)[0]
+
+        # Regular move scoring logic continues as before...
         move_scores = {}
         for nx, ny in neighbors:
+            # Skip known dangerous cells
+            if (nx, ny) in self.known_pits or (nx, ny) in self.known_wumpus:
+                move_scores[(nx, ny)] = -1.0  # Very low score
+                continue
+
             # Base score is inverse of risk (1 - risk)
             base_score = 1 - risk[nx, ny]
 
-            # Penalize frequently visited cells
-            visit_penalty = min(0.5, self.visit_count[(nx, ny)] * 0.1)
+            # Penalize frequently visited cells (increased penalty)
+            visit_penalty = min(0.7, self.visit_count[(nx, ny)] * 0.15)
 
             # Extra penalty for moves that would create a loop
-            loop_penalty = 0.7 if self.is_in_loop((nx, ny)) else 0
+            loop_penalty = 0.8 if self.is_in_loop((nx, ny)) else 0
 
             # Reward for unvisited cells
-            novelty_bonus = 0.3 if (nx, ny) not in self.visited else 0
+            novelty_bonus = 0.4 if (nx, ny) not in self.visited else 0
+
+            # Major penalty for cells where the agent died before
+            death_penalty = min(1.0, self.deaths[(nx, ny)] * 0.8)
 
             # Combine factors
-            move_scores[(nx, ny)] = base_score - visit_penalty - loop_penalty + novelty_bonus
+            move_scores[(nx, ny)] = base_score - visit_penalty - loop_penalty - death_penalty + novelty_bonus
+
+        # Rest of the method remains the same...
 
         # If we have a frontier, prioritize unexplored cells
         frontier_neighbors = [pos for pos in neighbors if pos in self.frontier]
-        if frontier_neighbors and any(move_scores[pos] > 0.3 for pos in frontier_neighbors):
+        if frontier_neighbors and any(move_scores[pos] > 0.2 for pos in frontier_neighbors):
             best_frontier = max(frontier_neighbors, key=lambda pos: move_scores[pos])
             return best_frontier
 
-        # If all moves look bad, try a random move
+        # If all moves look bad, try a random move with higher probability
         if all(score < 0.2 for score in move_scores.values()):
-            # 30% chance of random move to break out of difficult situations
-            if random.random() < 0.3:
-                return random.choice(neighbors)
+            if random.random() < 0.4:  # Increased chance of random move
+                candidates = [pos for pos in neighbors if move_scores[pos] > -0.5]
+                if candidates:
+                    return random.choice(candidates)
 
         # Otherwise, pick the best scored move
         return max(move_scores.items(), key=lambda x: x[1])[0]
@@ -485,6 +601,26 @@ class WumpusWorld:
         print("B = Breeze, S = Stench, BS = Breeze+Stench")
         print(f"Gold is at position {self.gold_pos}\n")
 
+    def remember_death(self, pos, cause):
+        """Remember that the agent died at this position"""
+        self.deaths[pos] += 1
+
+        # Add to known dangers
+        if cause == 'Pit':
+            self.known_pits.add(pos)
+            print(f"💡 Learned: {pos} contains a pit")
+        elif cause == 'Wumpus':
+            self.known_wumpus.add(pos)
+            print(f"💡 Learned: {pos} contains a wumpus")
+
+        # Update knowledge to reflect this
+        if pos in self.knowledge:
+            self.knowledge[pos]['safe'] = False
+
+        # Remove from frontier
+        if pos in self.frontier:
+            self.frontier.remove(pos)
+
     def run(self):
         self.print_world()  # Print initial world state
 
@@ -527,9 +663,15 @@ class WumpusWorld:
 
             # Check for death
             if self.grid[next_pos]['type'] in ['Pit', 'Wumpus']:
+                death_cause = self.grid[next_pos]['type']
                 print(f"💀 Agent died at {next_pos}! " +
-                     ("Fell into a pit." if self.grid[next_pos]['type'] == 'Pit' else "Eaten by Wumpus."))
-                self.agent_pos = (0, 0)  # Restart at origin
+                     ("Fell into a pit." if death_cause == 'Pit' else "Eaten by Wumpus."))
+
+                # Remember this deadly location
+                self.remember_death(next_pos, death_cause)
+
+                # Restart at origin
+                self.agent_pos = (0, 0)
                 self.last_positions = [(0, 0)]  # Reset position history
                 self.visit_count[(0, 0)] += 1
                 self.visited.add((0, 0))
