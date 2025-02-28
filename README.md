@@ -31,6 +31,7 @@ LLM based Tic Tac Toe and Probabilistic Wumpus Solver
 │   ├── wumpus_world_system.py
 │   ├── integrated_system.py
 │   ├──  __main__.py
+├── output/
 │   ├── Exercise1.json
 │   ├── Exercise1.png
 │   ├── Exercise2_plots/
