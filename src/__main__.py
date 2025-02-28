@@ -1,152 +1,312 @@
-import json
-from typing import List
-import matplotlib.pyplot as plt
-import numpy as np
-from scipy.stats import binom
-from tqdm import tqdm
-import os
+"""
+AI Assignment - Main CLI Interface
+"""
 import argparse
+import json
+import os
+import sys
+from typing import List, Dict, Any, Optional
+from pathlib import Path
+import random
+
+from .llm import LLMFactory
 from .tic_tac_toe_solver import play_game
+from .wumpus_world_system import WumpusWorld
 from .integrated_system import IntegratedWumpusTicTacToe
+from .utils.plot_binomial_distribution import plot_binomial_distribution
 
-def load_previous_outcomes(filename: str) -> List[int]:
-    """
-    Load previously saved outcomes from a JSON file
-    """
+# ----- Constants -----
+DEFAULT_OUTPUT_DIR = "output"
+DEFAULT_WUMPUS_OUTPUT_DIR = "wumpus_output"
+STATE_FILE = "task_state.json"
+
+# ----- Helper Functions -----
+def ensure_output_dirs_exist():
+    """Create output directories if they don't exist"""
+    os.makedirs(DEFAULT_OUTPUT_DIR, exist_ok=True)
+    os.makedirs(DEFAULT_WUMPUS_OUTPUT_DIR, exist_ok=True)
+
+def save_state(task: str, state: Dict[str, Any]):
+    """Save the current task state to a file"""
+    full_state = load_state()
+    full_state[task] = state
+
+    with open(os.path.join(DEFAULT_OUTPUT_DIR, STATE_FILE), 'w') as f:
+        json.dump(full_state, f, indent=2)
+
+def load_state() -> Dict[str, Any]:
+    """Load the saved state from file"""
     try:
-        with open(f"{filename}.json", 'r') as f:
-            data = json.load(f)
-            return data["outcomes"]
-    except FileNotFoundError:
-        return []
+        with open(os.path.join(DEFAULT_OUTPUT_DIR, STATE_FILE), 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
 
-def run_trials(n_trials: int = 5, continue_previous: bool = False) -> List[int]:
-    """
-    Run n_trials of Tic Tac Toe games and return the outcomes
-    """
-    outcomes = []
-    if continue_previous:
-        outcomes = load_previous_outcomes("output/Exercise1")
-        print(f"Loaded {len(outcomes)} previous outcomes")
-        remaining_trials = n_trials - len(outcomes)
+def get_state(task: str) -> Dict[str, Any]:
+    """Get the state for a specific task"""
+    full_state = load_state()
+    return full_state.get(task, {})
+
+def prompt_for_api_key(provider_name: str) -> str:
+    """Prompt the user for an API key"""
+    key = input(f"Enter your {provider_name} API key: ")
+    return key.strip()
+
+def validate_api_key(provider: str, key: str) -> bool:
+    """Validate an API key by making a simple request"""
+    try:
+        llm = LLMFactory.create_provider(provider)
+        llm.initialize(api_key=key)
+        response = llm.generate("Say 'hello'", temperature=0.1, max_tokens=5)
+        print(f"Test response from {provider}: {response.text}")
+        return True
+    except Exception as e:
+        print(f"Error validating {provider} API key: {e}")
+        return False
+
+def prompt_int(message: str, min_val: int = 1, max_val: Optional[int] = None, default: Optional[int] = None) -> int:
+    """Prompt the user for an integer value within a range"""
+    default_str = f" [{default}]" if default is not None else ""
+    range_str = f" ({min_val}-{max_val})" if max_val is not None else f" (min: {min_val})"
+
+    while True:
+        try:
+            value_str = input(f"{message}{range_str}{default_str}: ")
+            if not value_str and default is not None:
+                return default
+
+            value = int(value_str)
+            if value < min_val:
+                print(f"Value must be at least {min_val}")
+                continue
+            if max_val is not None and value > max_val:
+                print(f"Value must be at most {max_val}")
+                continue
+
+            return value
+        except ValueError:
+            print("Please enter a valid integer")
+
+def prompt_choice(message: str, choices: List[str], default: Optional[str] = None) -> str:
+    """Prompt the user to select from a list of choices"""
+    choices_str = "/".join(choices)
+    default_str = f" [{default}]" if default is not None else ""
+
+    while True:
+        choice = input(f"{message} ({choices_str}){default_str}: ").strip().lower()
+        if not choice and default is not None:
+            return default
+
+        if choice in [c.lower() for c in choices]:
+            return choice
+
+        print(f"Please select one of: {choices_str}")
+
+# ----- Task Runners -----
+def run_task1(args):
+    """Run Task 1: Tic-Tac-Toe Game with Bernoulli Trials"""
+    print("\n=== Task 1: Tic-Tac-Toe Bernoulli Trials ===")
+
+    # Get saved state or initialize new state
+    state = get_state("task1")
+    outcomes = state.get("outcomes", [])
+    total_trials = state.get("total_trials", 0)
+
+    # Check if resuming previous session
+    if outcomes and args.continue_previous:
+        print(f"Continuing from previous session ({len(outcomes)}/{total_trials} trials completed)")
     else:
-        remaining_trials = n_trials
+        # Reset state
+        outcomes = []
+        total_trials = 0
 
-    if remaining_trials <= 0:
-        print("Already have enough trials, no need to run more")
-        return outcomes
+    # Get or validate keys
+    llm1_key = args.gemini_key or os.getenv("GEMINI_API_KEY") or prompt_for_api_key("Gemini")
+    if not validate_api_key("gemini", llm1_key):
+        print("Invalid Gemini API key. Exiting.")
+        return
 
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY environment variable not set")
+    # Default providers
+    llm1_provider = "gemini"
+    llm2_provider = "gemini"
 
-    # Use tqdm for progress bar
-    start_index = len(outcomes)
-    for i in tqdm(range(remaining_trials), desc="Running games"):
-        winner = play_game(api_key, api_key)
-        print(f"Game {start_index + i + 1} winner: {winner}")
-        outcomes.append(winner)
+    # Let user choose a second key or use the same
+    use_same_key = prompt_choice(
+        "Use the same key for both players?", ["y", "n"], default="y"
+    ) == "y"
 
-    return outcomes
+    if use_same_key:
+        llm2_key = llm1_key
+    else:
+        # Ask which provider to use for Player 2
+        llm2_provider = prompt_choice(
+            "Which provider to use for Player 2?", ["gemini", "groq"], default="groq"
+        )
 
-def save_outcomes(outcomes: List[int], filename: str):
-    """
-    Save the outcomes to a file (both JSON and TXT formats)
-    """
-    # Save as JSON
-    with open(f"{filename}.json", 'w') as f:
+        llm2_key = args.groq_key or os.getenv("GROQ_API_KEY") or prompt_for_api_key(llm2_provider.capitalize())
+
+        if not validate_api_key(llm2_provider, llm2_key):
+            print(f"Invalid {llm2_provider.capitalize()} API key. Exiting.")
+            return
+
+    # Get trial parameters
+    if not total_trials:
+        board_size = prompt_int("Enter Tic-Tac-Toe board size", min_val=3, max_val=5, default=3)
+        total_trials = prompt_int("Enter number of trials to run", min_val=1, default=10)
+
+        # Update state
+        state = {
+            "outcomes": outcomes,
+            "total_trials": total_trials,
+            "board_size": board_size,
+            "llm1_provider": llm1_provider,
+            "llm2_provider": llm2_provider
+        }
+        save_state("task1", state)
+    else:
+        board_size = state.get("board_size", 3)
+        llm1_provider = state.get("llm1_provider", "gemini")
+        llm2_provider = state.get("llm2_provider", "gemini")
+
+    # Calculate remaining trials
+    remaining_trials = total_trials - len(outcomes)
+
+    # Run the trials
+    try:
+        print(f"\nRunning {remaining_trials} Tic-Tac-Toe games (board size: {board_size}x{board_size})...")
+        print(f"Player 1: {llm1_provider.capitalize()}, Player 2: {llm2_provider.capitalize()}")
+
+        for i in range(remaining_trials):
+            print(f"\n--- Game {len(outcomes) + 1}/{total_trials} ---")
+            winner = play_game(
+                llm1_key,
+                llm2_key,
+                board_size,
+                llm1_provider=llm1_provider,
+                llm2_provider=llm2_provider
+            )
+
+            # Record outcome
+            outcomes.append(winner)
+            state["outcomes"] = outcomes
+            save_state("task1", state)
+
+            print(f"Game result: {'Draw' if winner == 0 else f'Player {winner} wins'}")
+
+            # Check if user wants to continue after each game
+            if i < remaining_trials - 1 and not args.no_prompt:
+                cont = prompt_choice("Continue to next game?", ["y", "n"], default="y")
+                if cont != "y":
+                    print("Pausing trials. You can continue later using --continue.")
+                    break
+    except KeyboardInterrupt:
+        print("\nTrials interrupted. Progress has been saved.")
+
+    # Skip analysis if no games were played
+    if not outcomes:
+        print("No games were played. Exiting.")
+        return
+
+    # Analyze results
+    p1_wins = outcomes.count(1)
+    p2_wins = outcomes.count(2)
+    draws = outcomes.count(0)
+
+    print("\n=== Results Summary ===")
+    print(f"Total games completed: {len(outcomes)}/{total_trials}")
+    print(f"Player 1 wins: {p1_wins} ({p1_wins/len(outcomes)*100:.1f}%)")
+    print(f"Player 2 wins: {p2_wins} ({p2_wins/len(outcomes)*100:.1f}%)")
+    print(f"Draws: {draws} ({draws/len(outcomes)*100:.1f}%)")
+
+    # Save results to file
+    result_file = os.path.join(DEFAULT_OUTPUT_DIR, "tictactoe_results.json")
+    with open(result_file, 'w') as f:
         json.dump({
             "total_games": len(outcomes),
-            "player1_wins": outcomes.count(1),
-            "player2_wins": outcomes.count(2),
-            "draws": outcomes.count(0),
+            "player1_wins": p1_wins,
+            "player2_wins": p2_wins,
+            "draws": draws,
             "outcomes": outcomes
-        }, f, indent=4)
+        }, f, indent=2)
 
-    # Save as TXT
-    with open(f"{filename}.txt", 'w') as f:
-        f.write(f"Total games played: {len(outcomes)}\n")
-        f.write(f"Player 1 wins: {outcomes.count(1)}\n")
-        f.write(f"Player 2 wins: {outcomes.count(2)}\n")
-        f.write(f"Draws: {outcomes.count(0)}\n")
-        f.write("\nDetailed outcomes:\n")
-        f.write(str(outcomes))
+    print(f"\nResults saved to {result_file}")
 
-def plot_binomial_distribution(outcomes: List[int], filename: str):
-    """
-    Create and save a binomial distribution plot of the outcomes
-    """
-    # Count wins for Player 1 (excluding draws)
-    valid_games = [game for game in outcomes if game != 0]  # Exclude draws
-    n_valid_games = len(valid_games)
-    wins_p1 = valid_games.count(1)
+    # Generate and save binomial distribution plot
+    plot_file = os.path.join(DEFAULT_OUTPUT_DIR, "binomial_distribution.png")
+    plot_binomial_distribution(outcomes, plot_file)
+    print(f"Binomial distribution plot saved to {plot_file}")
 
-    # Calculate observed probability
-    p_observed = wins_p1 / n_valid_games if n_valid_games > 0 else 0
+    # Complete the task if all trials were run
+    if len(outcomes) >= total_trials:
+        print("All requested trials completed!")
 
-    # Create binomial distribution
-    k = np.arange(0, n_valid_games + 1)
-    binomial = binom.pmf(k, n_valid_games, 0.5)  # Expected probability is 0.5
+def run_task2(args):
+    """Run Task 2: Wumpus World Simulation"""
+    print("\n=== Task 2: Wumpus World Simulation ===")
 
-    # Create the plot
-    plt.figure(figsize=(10, 6))
-    plt.bar(k, binomial, alpha=0.5, color='blue', label='Expected Distribution')
-    plt.axvline(x=wins_p1, color='red', linestyle='--',
-                label=f'Observed wins (Player 1): {wins_p1}')
+    # Get world size
+    world_size = args.size or prompt_int("Enter Wumpus World size", min_val=4, max_val=10, default=4)
 
-    plt.title('Binomial Distribution of Tic Tac Toe Outcomes')
-    plt.xlabel('Number of Player 1 Wins')
-    plt.ylabel('Probability')
-    plt.legend()
-    plt.grid(True, alpha=0.3)
+    # Get strategy
+    strategy_choices = ["best", "random", "mixed"]
+    strategy = args.strategy or prompt_choice(
+        "Choose movement strategy", strategy_choices, default="best"
+    )
 
-    # Add text box with statistics
-    stats_text = f'Total valid games: {n_valid_games}\n'
-    stats_text += f'Player 1 wins: {wins_p1}\n'
-    stats_text += f'Observed probability: {p_observed:.3f}'
-    plt.text(0.95, 0.95, stats_text, transform=plt.gca().transAxes,
-             verticalalignment='top', horizontalalignment='right',
-             bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+    # Create the Wumpus World
+    print(f"\nInitializing Wumpus World of size {world_size}x{world_size}...")
+    wumpus_world = WumpusWorld(world_size)
+    print("Wumpus World created!")
 
-    plt.savefig(filename)
-    plt.close()
+    # Run the simulation
+    print(f"\nRunning simulation with '{strategy}' strategy...")
+    result = wumpus_world.run_until_completion(strategy=strategy)
 
-def simulate_ttt_outcome():
-    """
-    Simulate a Tic-Tac-Toe game outcome.
-    In a real implementation, this would call your Tic-Tac-Toe solver.
-    
-    Returns:
-        int: 0 if LLM-1 wins (best move), 1 if LLM-2 wins (random move)
-    """
-    import random
-    return random.randint(0, 1)
+    # Print results
+    print("\n=== Simulation Results ===")
+    print(f"Found gold: {'Yes' if result['found_gold'] else 'No'}")
+    print(f"Steps taken: {result['steps']}")
+    print(f"Cells visited: {result['visited_cells']}/{result['total_cells']}")
 
-def main():
-    parser = argparse.ArgumentParser(description='Wumpus World with Tic-Tac-Toe integration')
-    parser.add_argument('--size', type=int, default=4, help='Size of the Wumpus World grid')
-    parser.add_argument('--mode', choices=['auto', 'step'], default='auto',
-                       help='Run mode: auto (run until completion) or step (step-by-step)')
-    args = parser.parse_args()
-    
-    # Ensure output directory exists
-    os.makedirs('wumpus_output', exist_ok=True)
-    
+    # Save results to file
+    result_file = os.path.join(DEFAULT_OUTPUT_DIR, "wumpus_results.json")
+    with open(result_file, 'w') as f:
+        json.dump(result, f, indent=2)
+
+    print(f"\nResults saved to {result_file}")
+    print(f"Risk maps saved to {DEFAULT_WUMPUS_OUTPUT_DIR}/")
+
+def run_task3(args):
+    """Run Task 3: Integrated Wumpus-TicTacToe System"""
+    print("\n=== Task 3: Integrated Wumpus-TicTacToe System ===")
+
+    # Get world size
+    world_size = args.size or prompt_int("Enter Wumpus World size", min_val=4, max_val=10, default=4)
+
+    # Get simulation mode
+    mode_choices = ["auto", "step"]
+    mode = args.mode or prompt_choice(
+        "Choose simulation mode", mode_choices, default="auto"
+    )
+
     # Create the integrated system
-    print(f"\nInitializing Wumpus World of size {args.size}x{args.size}...")
-    game = IntegratedWumpusTicTacToe(wumpus_size=args.size)
-    
-    if args.mode == 'auto':
+    print(f"\nInitializing Wumpus World of size {world_size}x{world_size}...")
+    game = IntegratedWumpusTicTacToe(wumpus_size=world_size)
+
+    # Run the simulation
+    if mode == "auto":
         print("\nRunning in automatic mode until completion...")
         # Run the game until completion
         while not game.is_game_over():
-            ttt_result = simulate_ttt_outcome()
+            # Simulate a Tic-Tac-Toe outcome
+            ttt_result = 0 if random.random() < 0.5 else 1  # 0 for best move, 1 for random
             winner_name = "LLM-1" if ttt_result == 0 else "LLM-2"
             print(f"\nTic-Tac-Toe game result: {winner_name} wins")
-            
+
+            # Take a step based on the outcome
             result = game.take_step_based_on_ttt_outcome(ttt_result)
             print(f"Move result: {result['message']}")
-            
+
             if result['status'] == 'found_gold':
                 print("🎉 Success! Gold found!")
                 break
@@ -157,26 +317,87 @@ def main():
             user_input = input("\nPress Enter to continue, q to quit: ")
             if user_input.lower() == 'q':
                 break
-                
-            ttt_result = simulate_ttt_outcome()
+
+            # Simulate a Tic-Tac-Toe outcome
+            ttt_result = 0 if random.random() < 0.5 else 1
             winner_name = "LLM-1" if ttt_result == 0 else "LLM-2"
             print(f"Tic-Tac-Toe game result: {winner_name} wins")
-            
+
             result = game.take_step_based_on_ttt_outcome(ttt_result)
             print(f"Move result: {result['message']}")
             print(f"Agent position: {result.get('position', 'Unknown')}")
-            
+
             if result['status'] == 'found_gold':
                 print("🎉 Success! Gold found!")
                 break
-    
+
     # Game complete - show summary
     summary = game.get_summary()
     print("\nGame Summary:")
     for key, value in summary.items():
         print(f"- {key}: {value}")
-    
-    print(f"\nRisk map images saved in 'wumpus_output' directory")
+
+    # Save results to file
+    result_file = os.path.join(DEFAULT_OUTPUT_DIR, "integrated_results.json")
+    with open(result_file, 'w') as f:
+        json.dump(summary, f, indent=2)
+
+    print(f"\nResults saved to {result_file}")
+    print(f"Risk map images saved in '{DEFAULT_WUMPUS_OUTPUT_DIR}' directory")
+
+# ----- Main Function -----
+def main():
+    """Main entry point for the CLI"""
+    parser = argparse.ArgumentParser(description="AI Assignment CLI")
+
+    # Create subparsers for each task
+    subparsers = parser.add_subparsers(dest="task", help="Task to run")
+
+    # Task 1: Tic-Tac-Toe Bernoulli Trials
+    task1_parser = subparsers.add_parser("task1", help="Run Tic-Tac-Toe Bernoulli Trials")
+    task1_parser.add_argument("--gemini-key", help="Gemini API key")
+    task1_parser.add_argument("--groq-key", help="Groq API key")
+    task1_parser.add_argument("--continue", dest="continue_previous", action="store_true",
+                             help="Continue from previous state")
+    task1_parser.add_argument("--no-prompt", action="store_true",
+                             help="Run all trials without prompting")
+
+    # Task 2: Wumpus World Simulation
+    task2_parser = subparsers.add_parser("task2", help="Run Wumpus World Simulation")
+    task2_parser.add_argument("--size", type=int, help="Size of the Wumpus World grid")
+    task2_parser.add_argument("--strategy", choices=["best", "random", "mixed"],
+                             help="Movement strategy to use")
+
+    # Task 3: Integrated System
+    task3_parser = subparsers.add_parser("task3", help="Run Integrated Wumpus-TicTacToe System")
+    task3_parser.add_argument("--size", type=int, help="Size of the Wumpus World grid")
+    task3_parser.add_argument("--mode", choices=["auto", "step"],
+                             help="Run mode: auto or step-by-step")
+
+    # Parse arguments
+    args = parser.parse_args()
+
+    # Create output directories
+    ensure_output_dirs_exist()
+
+    # Dispatch to the appropriate task
+    if args.task == "task1":
+        run_task1(args)
+    elif args.task == "task2":
+        run_task2(args)
+    elif args.task == "task3":
+        run_task3(args)
+    else:
+        # If no task specified, show help
+        parser.print_help()
+        print("\nPlease specify a task to run: task1, task2, or task3")
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nProgram interrupted by user")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\nAn error occurred: {e}")
+        sys.exit(1)

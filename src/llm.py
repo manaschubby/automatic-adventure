@@ -17,6 +17,7 @@ print(response.text)
 """
 from google import genai
 from google.genai import Client
+from groq import Groq
 from abc import ABC, abstractmethod
 from typing import Any, Dict
 from dataclasses import dataclass
@@ -87,14 +88,63 @@ class GeminiProvider(LLMProvider):
                 'max_tokens': max_tokens
             }
         )
+class GroqProvider(LLMProvider):
+    """Implementation for Groq's API"""
 
+    def __init__(self):
+        self.client = None
+
+    def initialize(self, api_key: str, **kwargs):
+        """Initialize Groq client with API key"""
+        self.client = Groq(api_key=api_key)
+
+    def generate(self,
+                prompt: str,
+                model: str | None = "llama-3.3-70b-versatile",
+                temperature: float | None = 0.7,
+                max_tokens: int | None = None,
+                **kwargs) -> LLMResponse:
+        """Generate text using Groq"""
+        if not self.client:
+            raise RuntimeError("Groq client not initialized. Call initialize() first.")
+
+        # Set up parameters for the API call
+        params = {
+            "messages": [{"role": "user", "content": prompt}],
+            "model": model if model else "llama-3.3-70b-versatile",
+        }
+
+        if temperature is not None:
+            params["temperature"] = temperature
+        if max_tokens is not None:
+            params["max_tokens"] = max_tokens
+
+        # Include any additional parameters
+        params.update(kwargs)
+
+        # Call the Groq API
+        response = self.client.chat.completions.create(**params)
+
+        # Extract the text from the response
+        response_text = response.choices[0].message.content
+
+        return LLMResponse(
+            text=response_text,
+            raw_response=response,
+            metadata={
+                'model': model,
+                'temperature': temperature,
+                'max_tokens': max_tokens
+            }
+        )
 class LLMFactory:
     """Factory class to create LLM providers"""
 
     @staticmethod
     def create_provider(provider_name: str) -> LLMProvider:
         providers = {
-            'gemini': GeminiProvider
+            'gemini': GeminiProvider,
+            'groq': GroqProvider
         }
 
         if provider_name not in providers:

@@ -120,7 +120,8 @@ class TicTacToeSolver:
 
         return winner if winner is not None else 0
 
-def play_game(llm1_api_key: str, llm2_api_key: str, board_size: int = 3) -> int:
+def play_game(llm1_api_key: str, llm2_api_key: str, board_size: int = 3,
+              llm1_provider: str = 'gemini', llm2_provider: str = 'gemini') -> int:
     """
     High-level function to play a game of Tic Tac Toe between two LLMs.
 
@@ -128,13 +129,15 @@ def play_game(llm1_api_key: str, llm2_api_key: str, board_size: int = 3) -> int:
         llm1_api_key: API key for the first LLM
         llm2_api_key: API key for the second LLM
         board_size: Size of the Tic Tac Toe board (default 3x3)
+        llm1_provider: Provider for first LLM ('gemini' or 'groq')
+        llm2_provider: Provider for second LLM ('gemini' or 'groq')
 
     Returns:
         int: The winning player number (1 or 2) or 0 for a draw
     """
     # Create and initialize LLM providers
-    llm1 = LLMFactory.create_provider('gemini')
-    llm2 = LLMFactory.create_provider('gemini')
+    llm1 = LLMFactory.create_provider(llm1_provider)
+    llm2 = LLMFactory.create_provider(llm2_provider)
 
     llm1.initialize(api_key=llm1_api_key)
     llm2.initialize(api_key=llm2_api_key)
