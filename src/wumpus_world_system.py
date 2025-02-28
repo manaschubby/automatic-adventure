@@ -6,6 +6,7 @@ from pgmpy.inference import VariableElimination
 from pgmpy.factors.discrete import TabularCPD
 from collections import Counter
 import queue
+import os
 
 class WumpusWorld:
     def __init__(self, size):
@@ -28,10 +29,32 @@ class WumpusWorld:
         self.known_pits = set()  # Track confirmed pit locations
         self.known_wumpus = set()  # Track confirmed wumpus locations
         self.deaths = Counter()  # Track locations where agent died
+        
+        # Create output directory if it doesn't exist
+        os.makedirs('wumpus_output', exist_ok=True)
 
         # Randomly place elements and ensure gold is reachable
         self.place_elements_randomly()
         self.build_bayesian_network()
+        
+        # Initial position
+        self.visited.add(self.agent_pos)
+        self.visit_count[self.agent_pos] += 1
+        self.last_positions.append(self.agent_pos)
+        
+        # Initialize sensing
+        self.sense_environment()
+        self.update_knowledge()
+        self.update_frontier()
+        
+        # Game completion status
+        self.found_gold = False
+        self.is_game_over = False
+        self.max_steps = self.size * self.size * 3
+        
+        # Save the initial state
+        self.risk = self.compute_risk()
+        self.visualize_risk(self.risk)
 
     def place_elements_randomly(self):
         """Randomly place pits, wumpus, and gold while ensuring gold is reachable"""
@@ -621,90 +644,218 @@ class WumpusWorld:
         if pos in self.frontier:
             self.frontier.remove(pos)
 
-    def run(self):
-        self.print_world()  # Print initial world state
-
-        self.visited.add(self.agent_pos)
-        self.visit_count[self.agent_pos] += 1
-        self.last_positions.append(self.agent_pos)
-        max_steps = self.size * self.size * 3  # Allow more steps
-
-        # Initial sensing
-        percepts = self.sense_environment()
-        self.update_knowledge()
-        self.update_frontier()
-
-        while self.step < max_steps:
-            print(f"Step {self.step}: Agent at {self.agent_pos}")
-            x, y = self.agent_pos
-
-            # Check for gold
-            if self.grid[(x, y)]['type'] == 'Gold':
-                print("🎉 Agent found the GOLD at", self.agent_pos)
-                break
-
-            # Choose next move
+    def random_move(self):
+        """Choose a random move from available adjacent cells"""
+        x, y = self.agent_pos
+        neighbors = self.get_neighbors(x, y)
+        
+        # Filter out obviously dangerous cells (known pits or wumpus)
+        safe_options = [(nx, ny) for nx, ny in neighbors
+                        if (nx, ny) not in self.known_pits and (nx, ny) not in self.known_wumpus]
+        
+        # If no safe options, take any move
+        if not safe_options:
+            safe_options = neighbors
+        
+        # Prefer unvisited cells if available (with 70% probability)
+        unvisited = [pos for pos in safe_options if pos not in self.visited]
+        if unvisited and random.random() < 0.7:
+            return random.choice(unvisited)
+        
+        # Otherwise select any safe option with preference to less visited cells
+        if safe_options:
+            weights = [1.0 / (1 + self.visit_count[pos]) for pos in safe_options]
+            total = sum(weights)
+            if total > 0:
+                norm_weights = [w/total for w in weights]
+                return random.choices(safe_options, weights=norm_weights, k=1)[0]
+        
+        # Fallback to completely random choice from neighbors
+        return random.choice(neighbors) if neighbors else self.agent_pos
+    
+    def take_step(self, use_best_move=True):
+        """Take a single step in the environment using either best or random move.
+        
+        Args:
+            use_best_move (bool): If True, use Bayesian inference for best move.
+                                  If False, make a random move.
+        
+        Returns:
+            dict: Status information about the step and current state
+        """
+        if self.is_game_over:
+            return {
+                'status': 'game_over',
+                'found_gold': self.found_gold,
+                'step': self.step,
+                'position': self.agent_pos,
+                'message': "Game is already over"
+            }
+            
+        if self.step >= self.max_steps:
+            self.is_game_over = True
+            return {
+                'status': 'max_steps_reached',
+                'found_gold': False,
+                'step': self.step,
+                'position': self.agent_pos,
+                'message': f"Max steps ({self.max_steps}) reached. Terminating."
+            }
+            
+        print(f"Step {self.step}: Agent at {self.agent_pos}")
+        x, y = self.agent_pos
+            
+        # Check for gold
+        if self.grid[(x, y)]['type'] == 'Gold':
+            self.found_gold = True
+            self.is_game_over = True
+            print("🎉 Agent found the GOLD at", self.agent_pos)
+            return {
+                'status': 'found_gold',
+                'found_gold': True,
+                'step': self.step,
+                'position': self.agent_pos,
+                'message': f"Gold found at {self.agent_pos}!"
+            }
+            
+        # Choose next move based on strategy
+        if use_best_move:
             next_pos = self.best_move()
-            print(f"Moving to {next_pos}")
-
-            # Check for revisit
-            if next_pos in self.visited:
-                visit_count = self.visit_count[next_pos]
-                print(f"⚠️ Re-visiting {next_pos} (visit #{visit_count+1})")
-
-            # Update position history to detect loops
-            self.last_positions.append(next_pos)
-            if len(self.last_positions) > 10:
-                self.last_positions.pop(0)
-
-            # Move agent
-            nx, ny = next_pos
-            self.agent_pos = next_pos
-
-            # Check for death
-            if self.grid[next_pos]['type'] in ['Pit', 'Wumpus']:
-                death_cause = self.grid[next_pos]['type']
-                print(f"💀 Agent died at {next_pos}! " +
-                     ("Fell into a pit." if death_cause == 'Pit' else "Eaten by Wumpus."))
-
-                # Remember this deadly location
-                self.remember_death(next_pos, death_cause)
-
-                # Restart at origin
-                self.agent_pos = (0, 0)
-                self.last_positions = [(0, 0)]  # Reset position history
-                self.visit_count[(0, 0)] += 1
-                self.visited.add((0, 0))
-
-                # Re-sense the environment after restart
-                percepts = self.sense_environment()
-                self.update_knowledge()
-                self.update_frontier()
-
-                self.step += 1
-                continue
-
-            # Update visited, visit count and knowledge
-            self.visited.add(next_pos)
-            self.visit_count[next_pos] += 1
+            move_type = "best"
+        else:
+            next_pos = self.random_move()
+            move_type = "random"
+            
+        print(f"Moving to {next_pos} ({move_type} move)")
+            
+        # Check for revisit
+        if next_pos in self.visited:
+            visit_count = self.visit_count[next_pos]
+            print(f"⚠️ Re-visiting {next_pos} (visit #{visit_count+1})")
+            
+        # Update position history to detect loops
+        self.last_positions.append(next_pos)
+        if len(self.last_positions) > 10:
+            self.last_positions.pop(0)
+            
+        # Move agent
+        self.agent_pos = next_pos
+            
+        # Check for death
+        if self.grid[next_pos]['type'] in ['Pit', 'Wumpus']:
+            death_cause = self.grid[next_pos]['type']
+            print(f"💀 Agent died at {next_pos}! " +
+                 ("Fell into a pit." if death_cause == 'Pit' else "Eaten by Wumpus."))
+                
+            # Remember this deadly location
+            self.remember_death(next_pos, death_cause)
+                
+            # Restart at origin
+            self.agent_pos = (0, 0)
+            self.last_positions = [(0, 0)]  # Reset position history
+            self.visit_count[(0, 0)] += 1
+            self.visited.add((0, 0))
+                
+            # Re-sense the environment after restart
             percepts = self.sense_environment()
             self.update_knowledge()
             self.update_frontier()
-
+                
             self.step += 1
-
-            # Check for completion
-            if len(self.visited) == self.size * self.size:
-                print("🚨 Explored the entire grid. Terminating.")
+            
+            # Calculate and visualize the risk after the move
+            self.risk = self.compute_risk()
+            self.visualize_risk(self.risk)
+                
+            return {
+                'status': 'died',
+                'death_cause': death_cause,
+                'step': self.step,
+                'position': (0, 0),  # Reset to origin
+                'next_pos': next_pos,  # Where the agent died
+                'move_type': move_type,
+                'message': f"Died at {next_pos} due to {death_cause}. Restarting from (0,0)."
+            }
+            
+        # Update visited, visit count and knowledge
+        self.visited.add(next_pos)
+        self.visit_count[next_pos] += 1
+        percepts = self.sense_environment()
+        self.update_knowledge()
+        self.update_frontier()
+            
+        self.step += 1
+            
+        # Check for completion
+        if len(self.visited) == self.size * self.size:
+            self.is_game_over = True
+            print("🚨 Explored the entire grid. Terminating.")
+            
+        # Calculate and visualize the risk after the move
+        self.risk = self.compute_risk()
+        self.visualize_risk(self.risk)
+            
+        return {
+            'status': 'ok',
+            'step': self.step,
+            'position': next_pos,
+            'percepts': percepts,
+            'move_type': move_type,
+            'message': f"Moved to {next_pos} using {move_type} move strategy"
+        }
+    
+    def get_current_risk(self):
+        """Return the current risk map without recomputing"""
+        return self.risk
+        
+    def get_game_state(self):
+        """Return the current game state information"""
+        return {
+            'step': self.step,
+            'position': self.agent_pos,
+            'visited': list(self.visited),
+            'found_gold': self.found_gold,
+            'is_game_over': self.is_game_over,
+            'gold_pos': self.gold_pos,
+            'known_pits': list(self.known_pits),
+            'known_wumpus': list(self.known_wumpus)
+        }
+        
+    def run_until_completion(self, strategy='best'):
+        """Run the game until completion using a specified strategy
+        
+        Args:
+            strategy: 'best' for Bayesian inference, 'random' for random moves, 
+                     or 'mixed' for alternating between best and random
+        """
+        if strategy not in ['best', 'random', 'mixed']:
+            raise ValueError("Strategy must be 'best', 'random', or 'mixed'")
+            
+        while not self.is_game_over and self.step < self.max_steps:
+            if strategy == 'best':
+                use_best = True
+            elif strategy == 'random':
+                use_best = False
+            else:  # mixed
+                use_best = (self.step % 2 == 0)  # Alternate between best and random
+                
+            result = self.take_step(use_best)
+            if result['status'] == 'found_gold':
+                print(f"Found gold after {self.step} steps!")
                 break
+                
+        return {
+            'status': 'complete',
+            'found_gold': self.found_gold,
+            'steps': self.step,
+            'visited_cells': len(self.visited),
+            'total_cells': self.size * self.size
+        }
 
-        else:
-            print(f"💥 Max steps ({max_steps}) reached. Terminating.")
-
-        # Final state
-        self.print_world()
-        print(f"Total steps taken: {self.step}")
-        print(f"Unique cells visited: {len(self.visited)} out of {self.size * self.size}")
+    def run(self):
+        """Original run method - replaced by run_until_completion"""
+        print("Using the run_until_completion method instead for more flexibility.")
+        return self.run_until_completion(strategy='best')
 
 
 if __name__ == '__main__':

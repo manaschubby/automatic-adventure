@@ -7,6 +7,7 @@ from tqdm import tqdm
 import os
 import argparse
 from .tic_tac_toe_solver import play_game
+from .integrated_system import IntegratedWumpusTicTacToe
 
 def load_previous_outcomes(filename: str) -> List[int]:
     """
@@ -110,31 +111,72 @@ def plot_binomial_distribution(outcomes: List[int], filename: str):
     plt.savefig(filename)
     plt.close()
 
+def simulate_ttt_outcome():
+    """
+    Simulate a Tic-Tac-Toe game outcome.
+    In a real implementation, this would call your Tic-Tac-Toe solver.
+    
+    Returns:
+        int: 0 if LLM-1 wins (best move), 1 if LLM-2 wins (random move)
+    """
+    import random
+    return random.randint(0, 1)
+
 def main():
-    parser = argparse.ArgumentParser(description='Run Tic Tac Toe trials')
-    parser.add_argument('--continue', dest='continue_previous', action='store_true',
-                      help='Continue from previous results')
-    parser.add_argument('--trials', type=int, default=500,
-                      help='Total number of trials to run (default: 500)')
+    parser = argparse.ArgumentParser(description='Wumpus World with Tic-Tac-Toe integration')
+    parser.add_argument('--size', type=int, default=4, help='Size of the Wumpus World grid')
+    parser.add_argument('--mode', choices=['auto', 'step'], default='auto',
+                       help='Run mode: auto (run until completion) or step (step-by-step)')
     args = parser.parse_args()
-
-    # Create output directory if it doesn't exist
-    os.makedirs("output", exist_ok=True)
-
-    # Run the trials
-    print(f"Starting/Continuing trials until we have {args.trials} total...")
-    outcomes = run_trials(args.trials, args.continue_previous)
-
-    # Save outcomes
-    save_outcomes(outcomes, "output/Exercise1")
-
-    # Create and save plot
-    plot_binomial_distribution(outcomes, "output/Exercise1.png")
-
-    print("Analysis complete! Results saved in output directory.")
-    print(f"Player 1 wins: {outcomes.count(1)}")
-    print(f"Player 2 wins: {outcomes.count(2)}")
-    print(f"Draws: {outcomes.count(0)}")
+    
+    # Ensure output directory exists
+    os.makedirs('wumpus_output', exist_ok=True)
+    
+    # Create the integrated system
+    print(f"\nInitializing Wumpus World of size {args.size}x{args.size}...")
+    game = IntegratedWumpusTicTacToe(wumpus_size=args.size)
+    
+    if args.mode == 'auto':
+        print("\nRunning in automatic mode until completion...")
+        # Run the game until completion
+        while not game.is_game_over():
+            ttt_result = simulate_ttt_outcome()
+            winner_name = "LLM-1" if ttt_result == 0 else "LLM-2"
+            print(f"\nTic-Tac-Toe game result: {winner_name} wins")
+            
+            result = game.take_step_based_on_ttt_outcome(ttt_result)
+            print(f"Move result: {result['message']}")
+            
+            if result['status'] == 'found_gold':
+                print("🎉 Success! Gold found!")
+                break
+    else:
+        print("\nRunning in step-by-step mode. Press Enter to continue, q to quit.")
+        # Run the game step by step with user input
+        while not game.is_game_over():
+            user_input = input("\nPress Enter to continue, q to quit: ")
+            if user_input.lower() == 'q':
+                break
+                
+            ttt_result = simulate_ttt_outcome()
+            winner_name = "LLM-1" if ttt_result == 0 else "LLM-2"
+            print(f"Tic-Tac-Toe game result: {winner_name} wins")
+            
+            result = game.take_step_based_on_ttt_outcome(ttt_result)
+            print(f"Move result: {result['message']}")
+            print(f"Agent position: {result.get('position', 'Unknown')}")
+            
+            if result['status'] == 'found_gold':
+                print("🎉 Success! Gold found!")
+                break
+    
+    # Game complete - show summary
+    summary = game.get_summary()
+    print("\nGame Summary:")
+    for key, value in summary.items():
+        print(f"- {key}: {value}")
+    
+    print(f"\nRisk map images saved in 'wumpus_output' directory")
 
 if __name__ == "__main__":
     main()
