@@ -6,7 +6,6 @@ import json
 import os
 import sys
 from typing import List, Dict, Any, Optional
-from pathlib import Path
 import random
 
 from .llm import LLMFactory
@@ -256,11 +255,19 @@ def run_task2(args):
     # Create the Wumpus World
     print(f"\nInitializing Wumpus World of size {world_size}x{world_size}...")
     wumpus_world = WumpusWorld(world_size)
+
+    # Print the initial world state
+    print("\n=== Initial World State ===")
+    wumpus_world.print_world()
     print("Wumpus World created!")
 
     # Run the simulation
     print(f"\nRunning simulation with '{strategy}' strategy...")
     result = wumpus_world.run_until_completion(strategy=strategy)
+
+    # Print the final world state
+    print("\n=== Final World State ===")
+    wumpus_world.print_world()
 
     # Print results
     print("\n=== Simulation Results ===")
@@ -268,20 +275,91 @@ def run_task2(args):
     print(f"Steps taken: {result['steps']}")
     print(f"Cells visited: {result['visited_cells']}/{result['total_cells']}")
 
+    # Get and print more detailed state information
+    game_state = wumpus_world.get_game_state()
+
+    print("\n=== Detailed State Information ===")
+    print(f"Agent final position: {game_state['position']}")
+    print(f"Gold position: {game_state['gold_pos']}")
+    print(f"Known pit locations: {game_state['known_pits']}")
+    print(f"Known wumpus locations: {game_state['known_wumpus']}")
+
+    # Print visit statistics
+    print("\n=== Visit Statistics ===")
+    visit_counts = wumpus_world.visit_count
+    most_visited = sorted(visit_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+    print(f"Most visited cells: {most_visited}")
+
+    # Print death statistics if any
+    if wumpus_world.deaths:
+        print("\n=== Death Statistics ===")
+        death_locations = sorted(wumpus_world.deaths.items(), key=lambda x: x[1], reverse=True)
+        print(f"Death locations (location: count): {death_locations}")
+
     # Save results to file
     result_file = os.path.join(DEFAULT_OUTPUT_DIR, "wumpus_results.json")
+
+    # Create a more detailed result dictionary
+    detailed_result = {
+        **result,  # Include original result data
+        "gold_position": game_state['gold_pos'],
+        "final_position": game_state['position'],
+        "known_pits": list(game_state['known_pits']),
+        "known_wumpus": list(game_state['known_wumpus']),
+        "most_visited_cells": [{str(loc): count} for loc, count in most_visited],
+        "death_locations": [{str(loc): count} for loc, count in wumpus_world.deaths.items()]
+    }
+
     with open(result_file, 'w') as f:
-        json.dump(result, f, indent=2)
+        json.dump(detailed_result, f, indent=2)
 
     print(f"\nResults saved to {result_file}")
     print(f"Risk maps saved to {DEFAULT_WUMPUS_OUTPUT_DIR}/")
+
+    # Print locations of the last few risk map images
+    risk_maps = sorted([f for f in os.listdir(DEFAULT_WUMPUS_OUTPUT_DIR)
+                       if f.startswith('risk_step_')])[-3:]
+    if risk_maps:
+        print("\nLast few risk maps:")
+        for map_file in risk_maps:
+            print(f"  {os.path.join(DEFAULT_WUMPUS_OUTPUT_DIR, map_file)}")
 
 def run_task3(args):
     """Run Task 3: Integrated Wumpus-TicTacToe System"""
     print("\n=== Task 3: Integrated Wumpus-TicTacToe System ===")
 
-    # Get world size
+    # Get or validate LLM keys (similar to Task 1)
+    llm1_key = args.gemini_key or os.getenv("GEMINI_API_KEY") or prompt_for_api_key("Gemini")
+    if not validate_api_key("gemini", llm1_key):
+        print("Invalid Gemini API key. Exiting.")
+        return
+
+    # Default providers
+    llm1_provider = "gemini"
+    llm2_provider = "gemini"
+
+    # Let user choose a second key or use the same
+    use_same_key = prompt_choice(
+        "Use the same key for both players?", ["y", "n"], default="y"
+    ) == "y"
+
+    if use_same_key:
+        llm2_key = llm1_key
+    else:
+        # Ask which provider to use for Player 2
+        llm2_provider = prompt_choice(
+            "Which provider to use for Player 2?", ["gemini", "groq"], default="groq"
+        )
+
+        llm2_key = args.groq_key or os.getenv("GROQ_API_KEY") or prompt_for_api_key(llm2_provider.capitalize())
+
+        if not validate_api_key(llm2_provider, llm2_key):
+            print(f"Invalid {llm2_provider.capitalize()} API key. Exiting.")
+            return
+
+    # Get game parameters
     world_size = args.size or prompt_int("Enter Wumpus World size", min_val=4, max_val=10, default=4)
+    ttt_size = prompt_int("Enter Tic-Tac-Toe board size", min_val=3, max_val=5, default=3)
 
     # Get simulation mode
     mode_choices = ["auto", "step"]
@@ -293,15 +371,26 @@ def run_task3(args):
     print(f"\nInitializing Wumpus World of size {world_size}x{world_size}...")
     game = IntegratedWumpusTicTacToe(wumpus_size=world_size)
 
+    # Print the initial world state
+    print("\n=== Initial Wumpus World State ===")
+    game.wumpus_world.print_world()
+
     # Run the simulation
     if mode == "auto":
         print("\nRunning in automatic mode until completion...")
         # Run the game until completion
         while not game.is_game_over():
-            # Simulate a Tic-Tac-Toe outcome
-            ttt_result = 0 if random.random() < 0.5 else 1  # 0 for best move, 1 for random
-            winner_name = "LLM-1" if ttt_result == 0 else "LLM-2"
-            print(f"\nTic-Tac-Toe game result: {winner_name} wins")
+            # Play a Tic-Tac-Toe game to determine the move strategy
+            ttt_result = game.get_ttt_outcome(
+                llm1_key=llm1_key,
+                llm2_key=llm2_key,
+                board_size=ttt_size,
+                llm1_provider=llm1_provider,
+                llm2_provider=llm2_provider
+            )
+
+            move_strategy = "best" if ttt_result == 0 else "random"
+            print(f"\nMove strategy determined: {move_strategy}")
 
             # Take a step based on the outcome
             result = game.take_step_based_on_ttt_outcome(ttt_result)
@@ -318,10 +407,17 @@ def run_task3(args):
             if user_input.lower() == 'q':
                 break
 
-            # Simulate a Tic-Tac-Toe outcome
-            ttt_result = 0 if random.random() < 0.5 else 1
-            winner_name = "LLM-1" if ttt_result == 0 else "LLM-2"
-            print(f"Tic-Tac-Toe game result: {winner_name} wins")
+            # Play a Tic-Tac-Toe game to determine the move strategy
+            ttt_result = game.get_ttt_outcome(
+                llm1_key=llm1_key,
+                llm2_key=llm2_key,
+                board_size=ttt_size,
+                llm1_provider=llm1_provider,
+                llm2_provider=llm2_provider
+            )
+
+            move_strategy = "best" if ttt_result == 0 else "random"
+            print(f"\nMove strategy determined: {move_strategy}")
 
             result = game.take_step_based_on_ttt_outcome(ttt_result)
             print(f"Move result: {result['message']}")
@@ -330,6 +426,10 @@ def run_task3(args):
             if result['status'] == 'found_gold':
                 print("🎉 Success! Gold found!")
                 break
+
+    # Print the final world state
+    print("\n=== Final Wumpus World State ===")
+    game.wumpus_world.print_world()
 
     # Game complete - show summary
     summary = game.get_summary()
@@ -370,6 +470,8 @@ def main():
 
     # Task 3: Integrated System
     task3_parser = subparsers.add_parser("task3", help="Run Integrated Wumpus-TicTacToe System")
+    task3_parser.add_argument("--gemini-key", help="Gemini API key")
+    task3_parser.add_argument("--groq-key", help="Groq API key")
     task3_parser.add_argument("--size", type=int, help="Size of the Wumpus World grid")
     task3_parser.add_argument("--mode", choices=["auto", "step"],
                              help="Run mode: auto or step-by-step")
