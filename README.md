@@ -46,9 +46,14 @@ conda activate CSF407_2025_2021B5A82926H
 
 The system provides three main tasks that can be run through the CLI:
 
+Note: All options in the following tasks are optional. The arguments that are not provided will be prompted interactively.
+Please reach out to the team leader in case you are having any issues running the tasks.
+
 ### Task 1: Tic-Tac-Toe Bernoulli Trials
 
 Run multiple Tic-Tac-Toe games between two LLMs and analyze the results:
+
+Output of trials will be game files and the Exercise1.png in `output` folder
 
 ```bash
 python -m src task1 [options]
@@ -69,6 +74,8 @@ python -m src task1 --gemini-key "your_key" --no-prompt
 
 Run the Wumpus World pathfinding simulation:
 
+You will find the risk heatmaps in `wumpus_output` folder
+
 ```bash
 python -m src task2 [options]
 
@@ -85,6 +92,7 @@ python -m src task2 --size 6 --strategy best
 ### Task 3: Integrated System
 
 Run the integrated system where Tic-Tac-Toe outcomes determine Wumpus World movement strategies:
+You will find the risk heatmaps in `wumpus_output` folder
 
 ```bash
 python -m src task3 [options]

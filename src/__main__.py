@@ -202,7 +202,7 @@ def run_task1(args):
 
     # Get trial parameters
     if not total_trials:
-        board_size = prompt_int("Enter Tic-Tac-Toe board size", min_val=3, max_val=5, default=3)
+        board_size = prompt_int("Enter Tic-Tac-Toe board size", min_val=3, max_val=100, default=3)
         total_trials = prompt_int("Enter number of trials to run", min_val=1, default=10)
 
         # Update state
@@ -270,7 +270,7 @@ def run_task1(args):
     print(f"Draws: {draws} ({draws/len(outcomes)*100:.1f}%)")
 
     # Save results to file
-    result_file = os.path.join(DEFAULT_OUTPUT_DIR, "tictactoe_results.json")
+    result_file = os.path.join(DEFAULT_OUTPUT_DIR, "Exercise1.json")
     with open(result_file, 'w') as f:
         json.dump({
             "total_games": len(outcomes),
@@ -283,7 +283,7 @@ def run_task1(args):
     print(f"\nResults saved to {result_file}")
 
     # Generate and save binomial distribution plot
-    plot_file = os.path.join(DEFAULT_OUTPUT_DIR, "binomial_distribution.png")
+    plot_file = os.path.join(DEFAULT_OUTPUT_DIR, "Exercise1.png")
     plot_binomial_distribution(outcomes, plot_file)
     print(f"Binomial distribution plot saved to {plot_file}")
 
@@ -296,7 +296,7 @@ def run_task2(args):
     print("\n=== Task 2: Wumpus World Simulation ===")
 
     # Get world size
-    world_size = args.size or prompt_int("Enter Wumpus World size", min_val=4, max_val=10, default=4)
+    world_size = args.size or prompt_int("Enter Wumpus World size", min_val=4, max_val=100, default=4)
 
     # Get strategy
     strategy_choices = ["best", "random", "mixed"]
@@ -390,29 +390,42 @@ def run_task3(args):
     llm1_provider = "gemini"
     llm2_provider = "gemini"
 
-    # Let user choose a second key or use the same
-    use_same_key = prompt_choice(
-        "Use the same key for both players?", ["y", "n"], default="y"
-    ) == "y"
+    # Check if groq key was provided explicitly
+    has_explicit_groq_key = args.groq_key is not None
 
-    if use_same_key:
-        llm2_key = llm1_key
-    else:
-        # Ask which provider to use for Player 2
-        llm2_provider = prompt_choice(
-            "Which provider to use for Player 2?", ["gemini", "groq"], default="groq"
-        )
-
-        llm2_key = args.groq_key or os.getenv("GROQ_API_KEY") or prompt_for_api_key(llm2_provider.capitalize())
+    # If groq key is explicitly provided, use different providers without asking
+    if has_explicit_groq_key:
+        use_same_key = False
+        llm2_provider = "groq"
+        llm2_key = args.groq_key
 
         if not validate_api_key(llm2_provider, llm2_key):
             print(f"Invalid {llm2_provider.capitalize()} API key. Exiting.")
             return
+        print("Using Gemini for Player 1 and Groq for Player 2")
+    else:
+        # Let user choose a second key or use the same
+        use_same_key = prompt_choice(
+            "Use the same key for both players?", ["y", "n"], default="y"
+        ) == "y"
+
+        if use_same_key:
+            llm2_key = llm1_key
+        else:
+            # Ask which provider to use for Player 2
+            llm2_provider = prompt_choice(
+                "Which provider to use for Player 2?", ["gemini", "groq"], default="groq"
+            )
+
+            llm2_key = os.getenv("GROQ_API_KEY") or prompt_for_api_key(llm2_provider.capitalize())
+
+            if not validate_api_key(llm2_provider, llm2_key):
+                print(f"Invalid {llm2_provider.capitalize()} API key. Exiting.")
+                return
 
     # Get game parameters
-    world_size = args.size or prompt_int("Enter Wumpus World size", min_val=4, max_val=10, default=4)
-    ttt_size = prompt_int("Enter Tic-Tac-Toe board size", min_val=3, max_val=5, default=3)
-
+    world_size = args.size or prompt_int("Enter Wumpus World size", min_val=4, max_val=100, default=4)
+    ttt_size = prompt_int("Enter Tic-Tac-Toe board size", min_val=3, max_val=100, default=3)
     # Get simulation mode
     mode_choices = ["auto", "step"]
     mode = args.mode or prompt_choice(
