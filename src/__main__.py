@@ -6,7 +6,6 @@ import json
 import os
 import sys
 from typing import List, Dict, Any, Optional
-import random
 
 from .llm import LLMFactory
 from .tic_tac_toe_solver import play_game
@@ -20,6 +19,36 @@ DEFAULT_WUMPUS_OUTPUT_DIR = "wumpus_output"
 STATE_FILE = "task_state.json"
 
 # ----- Helper Functions -----
+def display_opening_screen():
+    """Display a fancy opening screen for the CLI"""
+    title = r"""
+     █████╗ ██╗     █████╗ ███████╗███████╗██╗ ██████╗ ███╗   ██╗███╗   ███╗███████╗███╗   ██╗████████╗
+    ██╔══██╗██║    ██╔══██╗██╔════╝██╔════╝██║██╔════╝ ████╗  ██║████╗ ████║██╔════╝████╗  ██║╚══██╔══╝
+    ███████║██║    ███████║███████╗███████╗██║██║  ███╗██╔██╗ ██║██╔████╔██║█████╗  ██╔██╗ ██║   ██║
+    ██╔══██║██║    ██╔══██║╚════██║╚════██║██║██║   ██║██║╚██╗██║██║╚██╔╝██║██╔══╝  ██║╚██╗██║   ██║
+    ██║  ██║██║    ██║  ██║███████║███████║██║╚██████╔╝██║ ╚████║██║ ╚═╝ ██║███████╗██║ ╚████║   ██║
+    ╚═╝  ╚═╝╚═╝    ╚═╝  ╚═╝╚══════╝╚══════╝╚═╝ ╚═════╝ ╚═╝  ╚═══╝╚═╝     ╚═╝╚══════╝╚═╝  ╚═══╝   ╚═╝
+    """
+
+    version = "v1.0.0"
+    separator = "=" * 80
+
+    print("\033[1;36m" + title + "\033[0m")  # Cyan color for title
+    print("\033[1;33m" + f"{version:>80}" + "\033[0m")  # Yellow for version
+    print("\033[1;37m" + separator + "\033[0m")  # White for separator
+
+    # Task descriptions
+    print("\033[1;32m Available Tasks:\033[0m")
+    print(" \033[1;37m1.\033[0m \033[1;34mTic-Tac-Toe Bernoulli Trials\033[0m - Run LLM trials of Tic-Tac-Toe")
+    print(" \033[1;37m2.\033[0m \033[1;34mWumpus World Simulation\033[0m     - Navigate a Wumpus World environment")
+    print(" \033[1;37m3.\033[0m \033[1;34mIntegrated System\033[0m           - Combined Wumpus-TicTacToe simulation")
+
+    print("\033[1;37m" + separator + "\033[0m")  # White for separator
+    print("\033[1;35m Usage: python -m automatic-adventure task1|task2|task3 [options]\033[0m")
+    print("\033[1;35m Help:  python -m automatic-adventure --help\033[0m")
+    print()
+
+
 def ensure_output_dirs_exist():
     """Create output directories if they don't exist"""
     os.makedirs(DEFAULT_OUTPUT_DIR, exist_ok=True)
@@ -129,24 +158,38 @@ def run_task1(args):
     llm1_provider = "gemini"
     llm2_provider = "gemini"
 
-    # Let user choose a second key or use the same
-    use_same_key = prompt_choice(
-        "Use the same key for both players?", ["y", "n"], default="y"
-    ) == "y"
+    # Check if groq key was provided explicitly
+    has_explicit_groq_key = args.groq_key is not None
 
-    if use_same_key:
-        llm2_key = llm1_key
-    else:
-        # Ask which provider to use for Player 2
-        llm2_provider = prompt_choice(
-            "Which provider to use for Player 2?", ["gemini", "groq"], default="groq"
-        )
-
-        llm2_key = args.groq_key or os.getenv("GROQ_API_KEY") or prompt_for_api_key(llm2_provider.capitalize())
+    # If groq key is explicitly provided, use different providers without asking
+    if has_explicit_groq_key:
+        use_same_key = False
+        llm2_provider = "groq"
+        llm2_key = args.groq_key
 
         if not validate_api_key(llm2_provider, llm2_key):
             print(f"Invalid {llm2_provider.capitalize()} API key. Exiting.")
             return
+        print("Using Gemini for Player 1 and Groq for Player 2")
+    else:
+        # Let user choose a second key or use the same
+        use_same_key = prompt_choice(
+            "Use the same key for both players?", ["y", "n"], default="y"
+        ) == "y"
+
+        if use_same_key:
+            llm2_key = llm1_key
+        else:
+            # Ask which provider to use for Player 2
+            llm2_provider = prompt_choice(
+                "Which provider to use for Player 2?", ["gemini", "groq"], default="groq"
+            )
+
+            llm2_key = os.getenv("GROQ_API_KEY") or prompt_for_api_key(llm2_provider.capitalize())
+
+            if not validate_api_key(llm2_provider, llm2_key):
+                print(f"Invalid {llm2_provider.capitalize()} API key. Exiting.")
+                return
 
     # Get trial parameters
     if not total_trials:
@@ -448,6 +491,9 @@ def run_task3(args):
 # ----- Main Function -----
 def main():
     """Main entry point for the CLI"""
+    # Display the opening screen
+    display_opening_screen()
+
     parser = argparse.ArgumentParser(description="AI Assignment CLI")
 
     # Create subparsers for each task

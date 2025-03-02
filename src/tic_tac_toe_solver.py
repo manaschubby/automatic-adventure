@@ -62,19 +62,36 @@ class TicTacToeSolver:
         )
 
     def _get_move_from_llm(self, llm: LLMProvider, game: TicTacToeGame, current_player: int) -> Tuple[int, int]:
-        """Get the next move from the LLM"""
-        prompt = self._prepare_prompt(game, current_player)
-        # print(f"Prompt for Player {current_player}:")
-        # print(prompt)
-        response = llm.generate(prompt, temperature=0.5)  # Low temperature for more consistent moves
-        string = response.text
-        if string.startswith("```json"):
-            string = string.replace("```json", "").replace("```", "")
-        try:
-            move_data = json.loads(string)
-            return (move_data["move"]["row"], move_data["move"]["col"])
-        except (json.JSONDecodeError, KeyError) as e:
-            raise ValueError(f"Invalid response from LLM: {response.text}") from e
+       """Get the next move from the LLM"""
+       prompt = self._prepare_prompt(game, current_player)
+       response = llm.generate(prompt, temperature=0.5)  # Low temperature for more consistent moves
+
+       # Extract JSON content from the response
+       response_text = response.text
+
+       # Try to find content between markdown code blocks
+       import re
+       json_blocks = re.findall(r'```(?:json)?(.*?)```', response_text, re.DOTALL)
+
+       # If found code blocks, use the first one that can be parsed as JSON
+       if json_blocks:
+           for block in json_blocks:
+               # Clean up the block (remove leading/trailing whitespace)
+               cleaned_block = block.strip()
+               try:
+                   move_data = json.loads(cleaned_block)
+                   if "move" in move_data and "row" in move_data["move"] and "col" in move_data["move"]:
+                       return (move_data["move"]["row"], move_data["move"]["col"])
+               except json.JSONDecodeError:
+                   continue  # Try the next block if this one isn't valid JSON
+
+       # If no valid JSON blocks were found or if there were no code blocks,
+       # try to parse the entire response as JSON as a fallback
+       try:
+           move_data = json.loads(response_text)
+           return (move_data["move"]["row"], move_data["move"]["col"])
+       except (json.JSONDecodeError, KeyError) as e:
+           raise ValueError(f"Invalid response from LLM: {response_text}") from e
 
     def play_game(self, board_size: int = 3) -> int:
         """
