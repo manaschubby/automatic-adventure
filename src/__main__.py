@@ -35,6 +35,15 @@ def display_opening_screen():
 
     print("\033[1;36m" + title + "\033[0m")  # Cyan color for title
     print("\033[1;33m" + f"{version:>80}" + "\033[0m")  # Yellow for version
+
+    # Team information
+    print("\033[1;35m" + "Team Members:" + "\033[0m")
+    print("\033[1;37m" + "  Shaantanu Jain    - 2021B5A82926H" + "\033[0m")
+    print("\033[1;37m" + "  Manas Ashwin      - 2021B4AA1908H" + "\033[0m")
+    print("\033[1;37m" + "  Niharika Rao      - 2021B5A82926H" + "\033[0m")
+    print("\033[1;37m" + "  Kush Desai        - 2021B4A73158H" + "\033[0m")
+    print("\033[1;37m" + "  Utkarsh Bhaskar   - 2021B3A71610H" + "\033[0m")
+
     print("\033[1;37m" + separator + "\033[0m")  # White for separator
 
     # Task descriptions
