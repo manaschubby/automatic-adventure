@@ -32,14 +32,14 @@ CSF407_2025_2021B5A82926H/
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/ShaantanuJain/CSF407_2025_2021B5A82926H.git
-cd CSF407_2025_2021B5A82926H
+git clone https://github.com/manaschubby/automatic-adventure.git
+cd automatic-adventure
 ```
 
 2. Create a conda environment:
 ```bash
 conda env create -f config.yml
-conda activate CSF407_2025_2021B5A82926H
+conda activate CSF407_2025_2021B4AA1908H
 ```
 
 ## Usage
