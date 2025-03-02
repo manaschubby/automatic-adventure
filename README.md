@@ -2,112 +2,45 @@
 
 A comprehensive AI system integrating Tic-Tac-Toe gameplay with Wumpus World pathfinding using LLM decision-making.
 
-## Our Approach
-
-### 1. Problem Decomposition
-- Split the complex problem into three distinct tasks:
-  1. LLM-powered Tic-Tac-Toe with statistical analysis
-  2. Bayesian-based Wumpus World pathfinding
-  3. Integration of both systems for dynamic strategy selection
-
-### 2. LLM Decision Making (Task 1)
-- **Multi-Provider Support**: Supports both Google Gemini and Groq for comparison
-- **Statistical Rigor**: Implements Bernoulli trials for win/loss analysis
-- **Key Features**:
-  - Structured prompt engineering for consistent gameplay
-  - Binomial distribution analysis of outcomes
-  - Persistence of game states for long-running trials
-  - Automated statistical visualization
-
-### 3. Wumpus World Navigation (Task 2)
-- **Bayesian Network Approach**:
-  - Dynamic risk assessment using Bayesian inference
-  - Probabilistic modeling of pit and wumpus locations
-  - Real-time updating of beliefs based on percepts
-- **Advanced Pathfinding**:
-  - Multiple movement strategies (best, random, mixed)
-  - Loop detection and avoidance
-  - Death learning and risk adaptation
-  - Visualization of risk maps
-- **Knowledge Representation**:
-  - Grid-based world model
-  - Persistent memory of dangerous locations
-  - Visit frequency tracking
-  - Frontier-based exploration
-
-### 4. Integrated System (Task 3)
-- **Dynamic Strategy Selection**:
-  - Uses Tic-Tac-Toe outcomes to determine Wumpus World strategy
-  - Winner-based decision making:
-    * Player 1 wins → Use Bayesian best-move strategy
-    * Player 2 wins → Use random exploration strategy
-    * Draw → Default to best-move strategy
-- **Adaptive Behavior**:
-  - Real-time strategy adjustment based on game outcomes
-  - Balance between exploration and exploitation
-  - Learning from failures and successes
-
-### 5. Technical Implementation
-- **Modular Architecture**:
-  - Clear separation of concerns between components
-  - Factory pattern for LLM provider management
-  - Abstract base classes for extensibility
-- **Data Management**:
-  - JSON-based state persistence
-  - Automated output organization
-  - Visual analysis generation
-- **Error Handling**:
-  - Graceful degradation on API failures
-  - State recovery mechanisms
-  - Comprehensive error reporting
-
-### 6. Visualization and Analysis
-- **Real-time Visualization**:
-  - Risk map generation for each step
-  - Binomial distribution plots
-  - Visit frequency heatmaps
-- **Results Analysis**:
-  - Statistical analysis of game outcomes
-  - Path efficiency metrics
-  - Strategy effectiveness comparison
-
 ## Project Structure
 
 ```
-automatic-adventure/
+CSF407_2025_2021B5A82926H/
 ├── src/
-│   ├── __main__.py           # Main CLI interface
-│   ├── integrated_system.py  # Integration of Wumpus World with Tic-Tac-Toe
-│   ├── llm.py               # LLM provider implementations (Gemini, Groq)
-│   ├── tic_tac_toe.py       # Tic-Tac-Toe game implementation
-│   ├── tic_tac_toe_solver.py # LLM-based Tic-Tac-Toe solver
-│   ├── wumpus_world_system.py # Wumpus World implementation
+│   ├── __main__.py                         # Main CLI interface
+│   ├── integrated_system.py                # Integration of Wumpus World with Tic-Tac-Toe
+│   ├── llm.py                              # LLM provider implementations (Gemini, Groq)
+│   ├── tic_tac_toe.py                      # Tic-Tac-Toe game implementation
+│   ├── tic_tac_toe_solver.py               # LLM-based Tic-Tac-Toe solver
+│   ├── wumpus_world_system.py              # Wumpus World implementation
 │   ├── prompts/
-│   │   └── tic_tac_toe_prompt.txt # Prompt template for Tic-Tac-Toe
+│   │   └── tic_tac_toe_prompt.txt          # Prompt template for Tic-Tac-Toe
 │   └── utils/
-│       ├── __init__.py
+│       ├── __init__.py                     # Initialization file for utils module
 │       └── plot_binomial_distribution.py
+└── config.yml
 ```
 
 ## Requirements
 
 - Python 3.10 or higher
-- Google Gemini API key
-- (Optional) Groq API key
+- conda (Required)
+- Google Gemini API key (Required)
+- Groq API key (Optional)
 
 ## Installation
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/automatic-adventure.git
-cd automatic-adventure
+git clone https://github.com/ShaantanuJain/CSF407_2025_2021B5A82926H.git
+cd CSF407_2025_2021B5A82926H
 ```
 
-2. Install dependencies:
+2. Create a conda environment:
 ```bash
-pip install -r requirements.txt
+conda env create -f config.yml
+conda activate CSF407_2025_2021B5A82926H
 ```
-
 
 ## Usage
 
@@ -124,7 +57,7 @@ Options:
   --gemini-key KEY     Specify Gemini API key
   --groq-key KEY       Specify Groq API key
   --continue           Continue from previous state
-  --no-prompt          Run all trials without prompting
+  --no-prompt          Run all trials without prompting (ideally choose this to let it run automatically)
 ```
 
 Example:
@@ -168,11 +101,11 @@ Example:
 python -m src task3 --gemini-key "your_key" --size 5 --mode step
 ```
 
-## Key Components
+## Key Components (Incase you want to use each component separately)
 
 ### 1. LLM Integration (`src/llm.py`)
 
-Provides a unified interface for different LLM providers:
+Provides a unified interface for different LLM providers.  Factory design pattern is used to create and initialize providers. Helps in plug and play for different LLM providers:
 
 ```python
 from src.llm import LLMFactory
@@ -235,29 +168,67 @@ The system generates various output files in two directories:
   - `wumpus_results.json`: Wumpus World simulation results
   - `integrated_results.json`: Integrated system results
   - `binomial_distribution.png`: Statistical analysis plot
+  - `game_<timestamp>.json`: Output of every tic tac toe game played between LLMS
 
 - `wumpus_output/`: Contains risk map visualizations
   - `risk_step_XXX.png`: Risk map images for each step
 
-## Benefits of Our Approach
 
-1. **Robustness**:
-   - Multiple fallback strategies
-   - Error recovery mechanisms
-   - State persistence
 
-2. **Scalability**:
-   - Support for different board sizes
-   - Multiple LLM providers
-   - Configurable parameters
+## Our Approach
 
-3. **Analysis Capabilities**:
-   - Statistical validation
-   - Visual result presentation
-   - Performance metrics
+### 1. LLM Decision Making (Task 1)
+- **Multi-Provider Support**: Supports both Google Gemini and Groq for comparison
+- **Statistical Rigor**: Implements Bernoulli trials for win/loss analysis
+- **Key Features**:
+  - Structured prompt engineering for consistent gameplay
+  - Binomial distribution analysis of outcomes
+  - Persistence of game states for long-running trials
+  - Statistical visualization
 
-4. **Flexibility**:
-   - Modular component design
-   - Easy strategy modification
-   - Configurable runtime behavior
+### 2. Wumpus World Navigation (Task 2)
+- **Bayesian Network Approach**:
+  - Dynamic risk assessment using Bayesian inference
+  - Probabilistic modeling of pit and wumpus locations
+  - Real-time updating of beliefs based on percepts
+- **Advanced Pathfinding**:
+  - Multiple movement strategies (best, random, mixed)
+  - Loop detection and avoidance
+  - Death learning and risk adaptation
+  - Visualization of risk maps
+- **Knowledge Representation**:
+  - Grid-based world model
+  - Persistent memory of dangerous locations
+  - Visit frequency tracking
+  - Frontier-based exploration
 
+### 3. Integrated System (Task 3)
+- **Dynamic Strategy Selection**:
+  - Uses Tic-Tac-Toe outcomes to determine Wumpus World strategy
+  - Winner-based decision making:
+    * Player 1 wins → Use Bayesian best-move strategy
+    * Player 2 wins → Use random exploration strategy
+    * Draw → Default to best-move strategy
+
+### 4. Technical Implementation
+- **Modular Architecture**:
+  - Clear separation of concerns between components
+  - Factory pattern for LLM provider management
+  - Abstract base classes for extensibility
+- **Data Management**:
+  - JSON-based state persistence
+  - Automated output organization
+  - Visual analysis generation
+- **Error Handling**:
+  - Graceful degradation on API failures
+  - State recovery mechanisms
+
+### 5. Visualization and Analysis
+- **Real-time Visualization**:
+  - Risk map generation for each step
+  - Binomial distribution plots
+  - Visit frequency heatmaps
+- **Results Analysis**:
+  - Statistical analysis of game outcomes
+  - Path efficiency metrics
+  - Strategy effectiveness comparison
